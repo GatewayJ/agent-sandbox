@@ -1,0 +1,29 @@
+# Sandbox pod 1: shares JuiceFS PVC with sandbox-shared-2
+apiVersion: agents.x-k8s.io/v1alpha1
+kind: Sandbox
+metadata:
+  name: sandbox-python-juicefs-1
+  namespace: default
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        sandbox: python-juicefs-shared
+        sandbox-instance: "1"
+        # 与 pathPattern 一致，便于从 Pod 识别 bucket 与挂载路径
+        juicefs/bucket: "juicefs"
+        juicefs/pv-path: "juicefs-default-juicefs-shared-pvc"
+    spec:
+      containers:
+        - name: python-sandbox
+          image: sandbox-runtime:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8888
+          volumeMounts:
+            - name: shared-data
+              mountPath: /shared
+      volumes:
+        - name: shared-data
+          persistentVolumeClaim:
+            claimName: juicefs-shared-pvc

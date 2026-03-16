@@ -16,13 +16,14 @@
 
 set -e
 
-export KIND_CLUSTER_NAME="agent-sandbox"
+export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-agent-sandbox}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # following develop guide to make and deploy agent-sandbox to kind cluster
-cd ../../
-make build 
+cd "${SCRIPT_DIR}/../.."
+make build
 make deploy-kind
-cd examples/python-runtime-sandbox
+cd "${SCRIPT_DIR}"
 
 echo "Building sandbox-runtime image..."
 docker build -t sandbox-runtime .
@@ -31,21 +32,38 @@ echo "Loading sandbox-runtime image into kind cluster..."
 kind load docker-image sandbox-runtime:latest --name "${KIND_CLUSTER_NAME}"
 
 
+echo "Waiting for agent-sandbox-controller to be ready..."
+kubectl wait --for=condition=available deployment/agent-sandbox-controller -n agent-sandbox-system --timeout=120s
+
 echo "Applying CRD and deployment..."
-kubectl apply -f sandbox-python-kind.yaml
+kubectl apply -f "${SCRIPT_DIR}/sandbox-python-kind.yaml"
 
 # Cleanup function
 cleanup() {
     echo "Cleaning up python-runtime and sandbox controller..."
-    kubectl delete --timeout=10s --ignore-not-found -f sandbox-python-kind.yaml
+    kubectl delete --timeout=10s --ignore-not-found -f "${SCRIPT_DIR}/sandbox-python-kind.yaml"
     kubectl delete --timeout=10s --ignore-not-found deployment agent-sandbox-controller -n agent-sandbox-system
     kubectl delete --timeout=10s --ignore-not-found crd sandboxes.agents.x-k8s.io
-    echo "Deleting kind cluster..." 
-    cd ../../
+    echo "Deleting kind cluster..."
+    cd "${SCRIPT_DIR}/../.."
     make delete-kind
-    cd examples/python-runtime-sandbox
+    cd "${SCRIPT_DIR}"
 }
-trap cleanup EXIT
+# 注释掉则脚本结束后不自动清理（保留集群和 Sandbox 便于排查）
+# trap cleanup EXIT
+
+echo "Waiting for sandbox pod to be created..."
+for i in $(seq 1 30); do
+    if kubectl get pod --selector=sandbox=my-python-sandbox --no-headers 2>/dev/null | grep -q .; then
+        break
+    fi
+    echo "  waiting for pod to appear... ($i/30)"
+    sleep 2
+done
+if ! kubectl get pod --selector=sandbox=my-python-sandbox --no-headers 2>/dev/null | grep -q .; then
+    echo "ERROR: sandbox pod did not appear within 60s"
+    exit 1
+fi
 
 echo "Waiting for sandbox pod to be ready..."
 kubectl wait --for=condition=ready pod --selector=sandbox=my-python-sandbox --timeout=60s
@@ -56,7 +74,7 @@ kubectl port-forward "pod/${POD_NAME}" 8888:8888 &
 PF_PID=$!
 
 # Additional cleanup for port-forward
-trap "kill $PF_PID; cleanup" EXIT
+# trap "kill $PF_PID; cleanup" EXIT
 
 # Give port-forward a moment to establish
 sleep 3
@@ -65,4 +83,4 @@ echo "Running the Python tester..."
 python3 tester.py 127.0.0.1 8888
 
 echo "Test finished."
-# The 'trap' command will now execute the cleanup function.
+# Cleanup is disabled (trap commented out); run cleanup manually if needed.

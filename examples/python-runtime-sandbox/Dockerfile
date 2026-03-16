@@ -1,7 +1,12 @@
-# Use the official Python image from the Docker Hub as the base image.  
-FROM python:3.11-slim
+# slim 体积适中；额外装少量常用工具（curl/ps/less）便于调试，不加 full bookworm
+FROM python:3.11-bookworm
 
 WORKDIR /app
+
+# 仅安装常用调试工具，--no-install-recommends 控制体积
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl procps less \
+    && rm -rf /var/lib/apt/lists/*
 
 # Installation of dependencies for python runtime sandbox.
 COPY requirements.txt .

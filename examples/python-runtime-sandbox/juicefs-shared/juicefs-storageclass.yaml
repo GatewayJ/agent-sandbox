@@ -1,0 +1,17 @@
+# StorageClass for JuiceFS (ReadWriteMany)
+# pathPattern: JuiceFS 内 PV 子目录名 = bucket名-命名空间-PVC名，便于区分 IO/挂载路径
+# Ref: https://juicefs.com/docs/zh/csi/guide/configurations/#using-path-pattern
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: juicefs-sc
+provisioner: csi.juicefs.com
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+parameters:
+  csi.storage.k8s.io/node-publish-secret-name: juicefs-sc-secret
+  csi.storage.k8s.io/node-publish-secret-namespace: kube-system
+  csi.storage.k8s.io/provisioner-secret-name: juicefs-sc-secret
+  csi.storage.k8s.io/provisioner-secret-namespace: kube-system
+  # 动态 PV 子目录命名：juicefs-<namespace>-<pvc-name>，与 MinIO bucket 名一致，路径清晰
+  pathPattern: "juicefs-${.pvc.namespace}-${.pvc.name}"

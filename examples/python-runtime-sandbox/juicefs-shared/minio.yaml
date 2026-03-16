@@ -1,0 +1,76 @@
+# MinIO as object storage backend for JuiceFS
+# Ref: https://juicefs.com/docs/community/juicefs_on_k3s
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: juicefs-infra
+  labels:
+    app: minio
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9000
+      targetPort: 9000
+      name: api
+    - port: 9001
+      targetPort: 9001
+      name: console
+  selector:
+    app: minio
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: juicefs-infra
+  labels:
+    app: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args:
+            - server
+            - /data
+          env:
+            - name: MINIO_ROOT_USER
+              value: "minioadmin"
+            - name: MINIO_ROOT_PASSWORD
+              value: "minioadmin"
+          ports:
+            - containerPort: 9000
+            - containerPort: 9001
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+        # Sidecar: 等 MinIO 就绪后创建 bucket，供 JuiceFS 使用；bucket 由本 Pod 动态创建，无需单独 Job
+        - name: bucket-init
+          image: minio/mc:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until mc alias set myminio http://127.0.0.1:9000 minioadmin minioadmin 2>/dev/null; do echo "waiting for MinIO..."; sleep 2; done
+              mc mb myminio/juicefs --ignore-existing
+              echo "Bucket juicefs ready"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+      volumes:
+        - name: data
+          emptyDir: {}

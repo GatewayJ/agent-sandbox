@@ -1,0 +1,7 @@
+# Namespace for MinIO, Redis and related infra (JuiceFS backend)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: juicefs-infra
+  labels:
+    app.kubernetes.io/name: juicefs-infra

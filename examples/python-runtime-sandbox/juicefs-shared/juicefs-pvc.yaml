@@ -1,0 +1,13 @@
+# PVC backed by JuiceFS (shared by multiple pods)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: juicefs-shared-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Pi
+  storageClassName: juicefs-sc
