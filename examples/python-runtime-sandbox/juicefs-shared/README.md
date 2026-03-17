@@ -1,13 +1,13 @@
-# JuiceFS 共享存储示例（两 Pod 共享同一 PVC）
+# JuiceFS 存储示例（同一卷内每 Pod 一目录）
 
-本目录包含在 Kind 集群中部署 **MinIO + Redis + JuiceFS CSI**，并让两个 Sandbox Pod 通过同一 PVC 共享文件的完整配置。
+本目录包含在 Kind 集群中部署 **MinIO + Redis + JuiceFS CSI**，并让两个 Sandbox Pod 挂载同一 PVC、**卷内每 Pod 占用一个子目录**（子目录名 = user-id-conv-id）的完整配置。
 
 ## 架构
 
 - **MinIO**：对象存储后端（JuiceFS 的 block 存储）；Pod 内 sidecar 在 MinIO 就绪后动态创建 bucket `juicefs`，无需单独 Job
 - **Redis**：元数据引擎（JuiceFS 的 metadata）
-- **JuiceFS CSI Driver**：提供 `ReadWriteMany` 的 PVC；StorageClass 使用 **pathPattern**，PV 在 JuiceFS 内子目录名为 `juicefs-<namespace>-<pvc-name>`（如 `juicefs-default-juicefs-shared-pvc`），便于区分 IO/挂载路径
-- **两个 Sandbox Pod**：挂载同一 `juicefs-shared-pvc`，在 `/shared` 下读写共享文件；Pod 带标签 `juicefs/bucket`、`juicefs/pv-path` 与 pathPattern 对应，便于从 Pod 反查 bucket 与挂载路径
+- **JuiceFS CSI Driver**：提供 `ReadWriteMany` 的 PVC；StorageClass 使用 **pathPattern**，PV 在 JuiceFS 内子目录名为 `juicefs-<namespace>-<pvc-name>`（本示例为 `juicefs-default-juicefs-demo-pvc`）
+- **两个 Sandbox Pod**：挂载同一 `juicefs-demo-pvc`，通过 **subPath** 各占卷内一个子目录（两级）：Demo 中 user-id=user-1，会话 conv-1/conv-2，子目录为 `user-1/conv-1`、`user-1/conv-2`；Pod 名含 user-id（`juicefs-demo-sandbox-user-1-conv-1`、`juicefs-demo-sandbox-user-1-conv-2`）
 
 ## 一键部署
 
@@ -25,8 +25,8 @@
 3. 创建命名空间 `juicefs-infra`，部署 MinIO（含 bucket 动态创建 sidecar）、Redis
 4. 部署 JuiceFS CSI Driver（来自官方 manifest URL）
 5. 创建 Secret、StorageClass、PVC
-6. 部署两个 Sandbox（`sandbox-python-juicefs-1`、`sandbox-python-juicefs-2`）
-7. 校验共享：在 Pod1 写文件，在 Pod2 读回
+6. 部署两个 Sandbox（`juicefs-demo-sandbox-user-1-conv-1`、`juicefs-demo-sandbox-user-1-conv-2`）
+7. 校验：每个 Pod 在各自子目录（user-1/conv-1、user-1/conv-2）内写读
 
 ## 文件说明
 
@@ -38,8 +38,10 @@
 | `juicefs-secret.yaml` | JuiceFS CSI 用 Secret（kube-system） |
 | `juicefs-storageclass.yaml` | StorageClass `juicefs-sc`（含 pathPattern：`juicefs-${.pvc.namespace}-${.pvc.name}`） |
 | `juicefs-pvc.yaml` | 共享 PVC（ReadWriteMany，10Pi） |
-| `sandbox-shared-1.yaml` | Sandbox Pod 1，挂载 `juicefs-shared-pvc` 到 `/shared` |
-| `sandbox-shared-2.yaml` | Sandbox Pod 2，同上 |
+| `sandbox-shared-1.yaml` | Sandbox Pod 1，user-id=user-1、conv-id=conv-1，subPath `user-1/conv-1` 挂到 `/shared` |
+| `sandbox-shared-2.yaml` | Sandbox Pod 2，user-id=user-1、conv-id=conv-2，subPath `user-1/conv-2` 挂到 `/shared` |
+
+本示例采用前缀 `juicefs-demo`，PVC 与 Sandbox 命名规则见 `docs/plans/2026-03-16-juicefs-demo-naming-convention.md` 第一节。
 
 ## 示例与生产环境（注意事项）
 
@@ -53,7 +55,11 @@
 ## 路径与标签
 
 - **PV 子目录（pathPattern）**：动态生成的 PV 在 JuiceFS 文件系统内对应子目录名为 `juicefs-<namespace>-<pvc-name>`，与 MinIO bucket 名 `juicefs` 一致，IO 与挂载路径清晰可辨。
-- **Pod 标签**：两个 Sandbox 的 podTemplate 带有 `juicefs/bucket: juicefs`、`juicefs/pv-path: juicefs-default-juicefs-shared-pvc`，便于通过 `kubectl get pods -L juicefs/bucket,juicefs/pv-path` 从 Pod 反查使用的 bucket 与 PV 路径。
+- **Pod 标签**：`user-id: user-1`、`conv-id: conv-1`/`conv-2`、`juicefs/bucket`、`juicefs/pv-path`。卷内子目录为两级 user-id/conv-id，即 `user-1/conv-1`、`user-1/conv-2`。
+
+## 多租户命名
+
+扩展为多租户时采用：**一用户一桶/一卷**。对应关系：user-id → MinIO 桶 / Secret（`juicefs-secret-<user-id>`）/ StorageClass（`juicefs-sc-<user-id>`）/ PVC（`juicefs-demo-pvc-<user-id>`）→ 一个 JuiceFS 卷；该用户所有 Pod 挂载该 PVC，卷内每个 Pod 占用一个子目录，**目录名 = Pod 名**；**Pod 名必须含 user-id**，格式 `<prefix>-sandbox-<user-id>-<conversation-id>`（如 `juicefs-demo-sandbox-user123-conv-abc`）。详见 `docs/plans/2026-03-16-juicefs-demo-naming-convention.md`。
 
 ## 参考
 

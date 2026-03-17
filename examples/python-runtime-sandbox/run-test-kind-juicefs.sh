@@ -15,6 +15,35 @@
 #
 # 一键部署：Kind 集群 + agent-sandbox + MinIO + Redis + JuiceFS CSI + 两个共享 JuiceFS 的 Sandbox Pod
 # Ref: https://juicefs.com/docs/zh/community/juicefs_on_k3s
+#
+# === 部署后常用运维命令（按需复制执行） ===
+#
+# 1) MinIO Web 控制台（对象存储桶视图，登录 minioadmin/minioadmin）
+#    kubectl port-forward svc/minio -n juicefs-infra 9001:9001
+#    浏览器打开 http://localhost:9001
+#
+# 2) JuiceFS CSI Dashboard（PV/PVC/Mount Pod 状态与日志）
+#    kubectl port-forward -n kube-system deployment/juicefs-csi-dashboard 8088:8088
+#    浏览器打开 http://localhost:8088
+#
+# 3) 列出 Mount Pod（同一 PVC 在不同节点各有一个）
+#    kubectl get pod -n kube-system -l app.kubernetes.io/name=juicefs-mount -o wide
+#
+# 4) 进入 Mount Pod 执行 juicefs 命令（必须加 -n kube-system）
+#    kubectl exec -n kube-system -it <mount-pod-name> -c jfs-mount -- sh
+#    容器内常见挂载点: /jfs 或 /var/lib/juicefs/...
+#
+# 5) juicefs status（需 metaurl，与 juicefs-secret 中一致）
+#    juicefs status redis://redis.juicefs-infra.svc.cluster.local:6379/0
+#    可选: juicefs status --session <Sid> <metaurl>
+#
+# 6) juicefs info（查看文件/目录元数据，参数为挂载点下的路径）
+#    juicefs info /jfs
+#    juicefs info /jfs/juicefs-default-juicefs-demo-pvc
+#    juicefs info -r /jfs/juicefs-default-juicefs-demo-pvc   # 递归目录
+#    cd /jfs && juicefs info -i <inode>                       # 按 inode 查
+#
+# 7) 根目录挂载：不写 subPath；子目录挂载：subPath: user-1/conv-1（相对路径，不要用 subPath: /）
 
 set -e
 
@@ -63,7 +92,7 @@ kubectl apply -f "${JUICEFS_DIR}/juicefs-storageclass.yaml"
 kubectl apply -f "${JUICEFS_DIR}/juicefs-pvc.yaml"
 
 echo "Waiting for PVC to be bound..."
-kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/juicefs-shared-pvc -n default --timeout=120s
+kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/juicefs-demo-pvc -n default --timeout=120s
 
 echo "Waiting for agent-sandbox-controller to be ready..."
 kubectl wait --for=condition=available deployment/agent-sandbox-controller -n agent-sandbox-system --timeout=120s
@@ -74,44 +103,57 @@ kubectl apply -f "${JUICEFS_DIR}/sandbox-shared-2.yaml"
 
 echo "Waiting for sandbox pods to be created..."
 for i in $(seq 1 60); do
-  count=$(kubectl get pod -n default -l sandbox=python-juicefs-shared --no-headers 2>/dev/null | wc -l)
+  count=$(kubectl get pod -n default -l sandbox=juicefs-demo --no-headers 2>/dev/null | wc -l)
   if [ "${count}" -ge 2 ]; then
     break
   fi
   echo "  waiting for 2 pods... (${count}/2) (${i}/60)"
   sleep 2
 done
-count=$(kubectl get pod -n default -l sandbox=python-juicefs-shared --no-headers 2>/dev/null | wc -l)
+count=$(kubectl get pod -n default -l sandbox=juicefs-demo --no-headers 2>/dev/null | wc -l)
 if [ "${count}" -lt 2 ]; then
   echo "ERROR: expected 2 sandbox pods, got ${count}"
   exit 1
 fi
 
 echo "Waiting for sandbox pods to be ready..."
-kubectl wait --for=condition=ready pod -l sandbox=python-juicefs-shared -n default --timeout=120s
+kubectl wait --for=condition=ready pod -l sandbox=juicefs-demo -n default --timeout=120s
 
-echo "=== Verifying shared JuiceFS: write from pod1, read from pod2 ==="
-POD1=$(kubectl get pods -n default -l sandbox-instance=1 -o jsonpath='{.items[0].metadata.name}')
-POD2=$(kubectl get pods -n default -l sandbox-instance=2 -o jsonpath='{.items[0].metadata.name}')
+echo "=== Verifying JuiceFS: each pod uses its own subdir (user-1/conv-1, user-1/conv-2) ==="
+POD1=$(kubectl get pods -n default -l user-id=user-1,conv-id=conv-1 -o jsonpath='{.items[0].metadata.name}')
+POD2=$(kubectl get pods -n default -l user-id=user-1,conv-id=conv-2 -o jsonpath='{.items[0].metadata.name}')
 if [ -z "${POD1}" ] || [ -z "${POD2}" ]; then
   echo "ERROR: could not get pod names (POD1=${POD1:-<empty>}, POD2=${POD2:-<empty>})"
   exit 1
 fi
-SHARED_TEST_FILE="/shared/juicefs-shared-test-$$.txt"
-SHARED_CONTENT="Hello from pod1 at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# 卷内每 Pod 一目录（两级）：Pod1 挂载 subPath user-1/conv-1，Pod2 挂载 user-1/conv-2
+TEST_FILE="/shared/juicefs-demo-test-$$.txt"
+CONTENT1="Hello from ${POD1} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CONTENT2="Hello from ${POD2} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-kubectl exec -n default "${POD1}" -- sh -c "printf '%s' \"${SHARED_CONTENT}\" > ${SHARED_TEST_FILE}"
-echo "Pod1 (${POD1}) wrote: ${SHARED_CONTENT}"
-READ_BACK=$(kubectl exec -n default "${POD2}" -- cat "${SHARED_TEST_FILE}")
-READ_BACK_TRIMMED="${READ_BACK%$'\n'}"
-echo "Pod2 (${POD2}) read back: ${READ_BACK}"
-if [ "${READ_BACK_TRIMMED}" = "${SHARED_CONTENT}" ]; then
-  echo "Shared JuiceFS verification OK: both pods see the same file."
+kubectl exec -n default "${POD1}" -- sh -c "printf '%s' \"${CONTENT1}\" > ${TEST_FILE}"
+READ1=$(kubectl exec -n default "${POD1}" -- cat "${TEST_FILE}")
+READ1_TRIMMED="${READ1%$'\n'}"
+if [ "${READ1_TRIMMED}" = "${CONTENT1}" ]; then
+  echo "Pod1 (${POD1}) subdir user-1/conv-1 OK: write and read back."
 else
-  echo "Shared JuiceFS verification FAILED: expected '${SHARED_CONTENT}', got '${READ_BACK_TRIMMED}'"
+  echo "Pod1 verification FAILED: expected '${CONTENT1}', got '${READ1_TRIMMED}'"
   exit 1
 fi
-kubectl exec -n default "${POD1}" -- rm -f "${SHARED_TEST_FILE}"
+
+kubectl exec -n default "${POD2}" -- sh -c "printf '%s' \"${CONTENT2}\" > ${TEST_FILE}"
+READ2=$(kubectl exec -n default "${POD2}" -- cat "${TEST_FILE}")
+READ2_TRIMMED="${READ2%$'\n'}"
+if [ "${READ2_TRIMMED}" = "${CONTENT2}" ]; then
+  echo "Pod2 (${POD2}) subdir user-1/conv-2 OK: write and read back."
+else
+  echo "Pod2 verification FAILED: expected '${CONTENT2}', got '${READ2_TRIMMED}'"
+  exit 1
+fi
+
+kubectl exec -n default "${POD1}" -- rm -f "${TEST_FILE}"
+kubectl exec -n default "${POD2}" -- rm -f "${TEST_FILE}"
+echo "JuiceFS verification OK: user-1 has two conv dirs (user-1/conv-1, user-1/conv-2), each pod uses its own."
 
 # Cleanup function: delete Sandbox CRs first (pods go away), then PVC, then infra
 cleanup() {
@@ -119,7 +161,7 @@ cleanup() {
   kubectl delete --timeout=30s --ignore-not-found -f "${JUICEFS_DIR}/sandbox-shared-1.yaml"
   kubectl delete --timeout=30s --ignore-not-found -f "${JUICEFS_DIR}/sandbox-shared-2.yaml"
   # Wait for pods to terminate so PVC can be released
-  kubectl wait --for=delete pod -l sandbox=python-juicefs-shared -n default --timeout=60s 2>/dev/null || true
+  kubectl wait --for=delete pod -l sandbox=juicefs-demo -n default --timeout=60s 2>/dev/null || true
   kubectl delete --timeout=30s --ignore-not-found -f "${JUICEFS_DIR}/juicefs-pvc.yaml"
   kubectl delete --timeout=10s --ignore-not-found -f "${JUICEFS_DIR}/juicefs-storageclass.yaml"
   kubectl delete --timeout=10s --ignore-not-found -f "${JUICEFS_DIR}/juicefs-secret.yaml"
@@ -137,5 +179,5 @@ cleanup() {
 # 取消注释下一行则脚本结束时自动清理
 # trap cleanup EXIT
 
-echo "Done. Two pods (${POD1}, ${POD2}) share JuiceFS PVC at /shared."
+echo "Done. Two pods (${POD1}, ${POD2}) use JuiceFS PVC; subdirs user-1/conv-1 and user-1/conv-2 (user-id=user-1)."
 echo "To cleanup later: uncomment 'trap cleanup EXIT' in this script and re-run, or run cleanup steps manually."

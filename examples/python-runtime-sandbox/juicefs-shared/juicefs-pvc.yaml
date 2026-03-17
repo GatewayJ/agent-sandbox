@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: juicefs-shared-pvc
+  name: juicefs-demo-pvc
   namespace: default
 spec:
   accessModes:

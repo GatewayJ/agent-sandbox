@@ -13,5 +13,5 @@ parameters:
   csi.storage.k8s.io/node-publish-secret-namespace: kube-system
   csi.storage.k8s.io/provisioner-secret-name: juicefs-sc-secret
   csi.storage.k8s.io/provisioner-secret-namespace: kube-system
-  # 动态 PV 子目录命名：juicefs-<namespace>-<pvc-name>，与 MinIO bucket 名一致，路径清晰
+  # 动态 PV 子目录命名：juicefs-<namespace>-<pvc-name>；本示例为 juicefs-default-juicefs-demo-pvc
   pathPattern: "juicefs-${.pvc.namespace}-${.pvc.name}"

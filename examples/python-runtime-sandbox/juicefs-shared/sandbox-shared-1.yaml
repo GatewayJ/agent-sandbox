@@ -1,18 +1,19 @@
-# Sandbox pod 1: shares JuiceFS PVC with sandbox-shared-2
+# Demo: user-id=user-1, conv-id=conv-1. JuiceFS 卷内子目录 = user-id/conv-id = user-1/conv-1
+# 多租户约定: user-id → 桶/Secret/StorageClass/PVC → 一卷；卷内每 Pod 一目录（= 子目录名）；Pod 名含 user-id
 apiVersion: agents.x-k8s.io/v1alpha1
 kind: Sandbox
 metadata:
-  name: sandbox-python-juicefs-1
+  name: juicefs-demo-sandbox-user-1-conv-1
   namespace: default
 spec:
   podTemplate:
     metadata:
       labels:
-        sandbox: python-juicefs-shared
-        sandbox-instance: "1"
-        # 与 pathPattern 一致，便于从 Pod 识别 bucket 与挂载路径
+        sandbox: juicefs-demo
+        user-id: "user-1"
+        conv-id: "conv-1"
         juicefs/bucket: "juicefs"
-        juicefs/pv-path: "juicefs-default-juicefs-shared-pvc"
+        juicefs/pv-path: "juicefs-default-juicefs-demo-pvc"
     spec:
       containers:
         - name: python-sandbox
@@ -23,7 +24,8 @@ spec:
           volumeMounts:
             - name: shared-data
               mountPath: /shared
+              subPath: user-1/conv-1
       volumes:
         - name: shared-data
           persistentVolumeClaim:
-            claimName: juicefs-shared-pvc
+            claimName: juicefs-demo-pvc
