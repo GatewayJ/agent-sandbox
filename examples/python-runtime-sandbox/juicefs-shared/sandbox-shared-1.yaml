@@ -1,5 +1,4 @@
-# Demo: user-id=user-1, conv-id=conv-1. JuiceFS 卷内子目录 = user-id/conv-id = user-1/conv-1
-# 多租户约定: user-id → 桶/Secret/StorageClass/PVC → 一卷；卷内每 Pod 一目录（= 子目录名）；Pod 名含 user-id
+# 与 sandbox-shared-2 挂载同一路径：不设 subPath，两者都挂载 PVC 根目录到 /shared，可互相看到对方写入的文件
 apiVersion: agents.x-k8s.io/v1alpha1
 kind: Sandbox
 metadata:

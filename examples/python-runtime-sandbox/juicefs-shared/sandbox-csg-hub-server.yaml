@@ -1,16 +1,15 @@
-# 与 sandbox-shared-1 挂载同一路径：不设 subPath，两者都挂载 PVC 根目录到 /shared，可互相看到对方写入的文件
+# csg-hub-server：挂载 JuiceFS 根目录（不设 subPath），可访问 PVC 下所有路径
 apiVersion: agents.x-k8s.io/v1alpha1
 kind: Sandbox
 metadata:
-  name: juicefs-demo-sandbox-user-1-conv-2
+  name: juicefs-demo-sandbox-csg-hub-server
   namespace: default
 spec:
   podTemplate:
     metadata:
       labels:
         sandbox: juicefs-demo
-        user-id: "user-1"
-        conv-id: "conv-2"
+        app: csg-hub-server
         juicefs/bucket: "juicefs"
         juicefs/pv-path: "juicefs-default-juicefs-demo-pvc"
     spec:
@@ -23,7 +22,7 @@ spec:
           volumeMounts:
             - name: shared-data
               mountPath: /shared
-              subPath: user-1/conv-2
+              # 不设 subPath，挂载 PVC 根目录
       volumes:
         - name: shared-data
           persistentVolumeClaim:

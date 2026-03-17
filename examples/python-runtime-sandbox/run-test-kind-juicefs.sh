@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# 一键部署：Kind 集群 + agent-sandbox + MinIO + Redis + JuiceFS CSI + 两个共享 JuiceFS 的 Sandbox Pod
+# 一键部署：Kind 集群 + agent-sandbox + MinIO + Redis + JuiceFS CSI + 三个共享 JuiceFS 的 Sandbox Pod（两个子目录 + csg-hub-server 根目录）
 # Ref: https://juicefs.com/docs/zh/community/juicefs_on_k3s
 #
 # === 部署后常用运维命令（按需复制执行） ===
@@ -44,6 +44,21 @@
 #    cd /jfs && juicefs info -i <inode>                       # 按 inode 查
 #
 # 7) 根目录挂载：不写 subPath；子目录挂载：subPath: user-1/conv-1（相对路径，不要用 subPath: /）
+#
+# 8) 在 K8s 集群外（本机）访问同一 JuiceFS：宿主机装 JuiceFS 客户端，把 Redis/MinIO 通过 port-forward 暴露到本机，
+#    并让集群内域名解析到 127.0.0.1（元数据里存的 bucket 是集群内 MinIO 域名，必须能解析）。
+#    a) 安装 JuiceFS 客户端: https://juicefs.com/docs/zh/community/installation
+#       (例: curl -sSL https://d.juicefs.com/install | sh)
+#    b) 本机 hosts 增加（使集群内域名指向本机，port-forward 后即可访问）：
+#       127.0.0.1 redis.juicefs-infra.svc.cluster.local minio.juicefs-infra.svc.cluster.local
+#    c) 两个终端或后台保持 port-forward：
+#       kubectl port-forward -n juicefs-infra svc/redis 6379:6379
+#       kubectl port-forward -n juicefs-infra svc/minio 9000:9000
+#    d) 挂载（与 CSI 共用同一 Redis 元数据，看到同一文件系统）：
+#       juicefs mount redis://redis.juicefs-infra.svc.cluster.local:6379/0 /mnt/jfs
+#       挂载后根目录下为 PV 子目录：若 pathPattern 生效则为 juicefs-default-juicefs-demo-pvc，
+#       未生效则为默认的 pvc-<PVC_UID>（pathPattern 仅在新创建 PV 时生效，且依赖 CSI 版本支持）。
+#    卸载: fusermount -u /mnt/jfs  或  umount /mnt/jfs
 
 set -e
 
@@ -88,6 +103,8 @@ kubectl wait --for=condition=ready pod -l app=juicefs-csi-controller -n kube-sys
 kubectl wait --for=condition=ready pod -l app=juicefs-csi-node -n kube-system --timeout=300s
 
 echo "=== Deploying JuiceFS StorageClass and PVC ==="
+# 使用默认 csi-provisioner（CreateVolume），pathPattern 不生效，JuiceFS 内目录名为 pvc-<UUID>。
+# 先 apply StorageClass 再 apply PVC；若集群中已存在同名 PVC 则不会重新 provision。
 kubectl apply -f "${JUICEFS_DIR}/juicefs-storageclass.yaml"
 kubectl apply -f "${JUICEFS_DIR}/juicefs-pvc.yaml"
 
@@ -97,69 +114,76 @@ kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/juicefs-demo-pvc -n defa
 echo "Waiting for agent-sandbox-controller to be ready..."
 kubectl wait --for=condition=available deployment/agent-sandbox-controller -n agent-sandbox-system --timeout=120s
 
-echo "=== Deploying two Sandbox pods with shared JuiceFS PVC ==="
+echo "=== Deploying three Sandbox pods with shared JuiceFS PVC (two subPath + csg-hub-server root) ==="
 kubectl apply -f "${JUICEFS_DIR}/sandbox-shared-1.yaml"
 kubectl apply -f "${JUICEFS_DIR}/sandbox-shared-2.yaml"
+kubectl apply -f "${JUICEFS_DIR}/sandbox-csg-hub-server.yaml"
 
 echo "Waiting for sandbox pods to be created..."
 for i in $(seq 1 60); do
   count=$(kubectl get pod -n default -l sandbox=juicefs-demo --no-headers 2>/dev/null | wc -l)
-  if [ "${count}" -ge 2 ]; then
+  if [ "${count}" -ge 3 ]; then
     break
   fi
-  echo "  waiting for 2 pods... (${count}/2) (${i}/60)"
+  echo "  waiting for 3 pods... (${count}/3) (${i}/60)"
   sleep 2
 done
 count=$(kubectl get pod -n default -l sandbox=juicefs-demo --no-headers 2>/dev/null | wc -l)
-if [ "${count}" -lt 2 ]; then
-  echo "ERROR: expected 2 sandbox pods, got ${count}"
+if [ "${count}" -lt 3 ]; then
+  echo "ERROR: expected 3 sandbox pods, got ${count}"
   exit 1
 fi
 
 echo "Waiting for sandbox pods to be ready..."
 kubectl wait --for=condition=ready pod -l sandbox=juicefs-demo -n default --timeout=120s
 
-echo "=== Verifying JuiceFS: each pod uses its own subdir (user-1/conv-1, user-1/conv-2) ==="
+echo "=== Verifying JuiceFS: Pod1/Pod2 each use subPath (user-1/conv-1, conv-2); csg-hub-server mounts root ==="
 POD1=$(kubectl get pods -n default -l user-id=user-1,conv-id=conv-1 -o jsonpath='{.items[0].metadata.name}')
 POD2=$(kubectl get pods -n default -l user-id=user-1,conv-id=conv-2 -o jsonpath='{.items[0].metadata.name}')
-if [ -z "${POD1}" ] || [ -z "${POD2}" ]; then
-  echo "ERROR: could not get pod names (POD1=${POD1:-<empty>}, POD2=${POD2:-<empty>})"
+POD_HUB=$(kubectl get pods -n default -l app=csg-hub-server -o jsonpath='{.items[0].metadata.name}')
+if [ -z "${POD1}" ] || [ -z "${POD2}" ] || [ -z "${POD_HUB}" ]; then
+  echo "ERROR: could not get pod names (POD1=${POD1:-<empty>}, POD2=${POD2:-<empty>}, POD_HUB=${POD_HUB:-<empty>})"
   exit 1
 fi
-# 卷内每 Pod 一目录（两级）：Pod1 挂载 subPath user-1/conv-1，Pod2 挂载 user-1/conv-2
-TEST_FILE="/shared/juicefs-demo-test-$$.txt"
-CONTENT1="Hello from ${POD1} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-CONTENT2="Hello from ${POD2} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Pod1/Pod2 各挂载不同 subPath（user-1/conv-1、user-1/conv-2），不能互相读对方目录；由挂载根目录的 csg-hub-server 验证可见性
+FILE1="/shared/pod1-wrote-$$.txt"
+FILE2="/shared/pod2-wrote-$$.txt"
+CONTENT1="Written by ${POD1} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CONTENT2="Written by ${POD2} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-kubectl exec -n default "${POD1}" -- sh -c "printf '%s' \"${CONTENT1}\" > ${TEST_FILE}"
-READ1=$(kubectl exec -n default "${POD1}" -- cat "${TEST_FILE}")
-READ1_TRIMMED="${READ1%$'\n'}"
-if [ "${READ1_TRIMMED}" = "${CONTENT1}" ]; then
-  echo "Pod1 (${POD1}) subdir user-1/conv-1 OK: write and read back."
+kubectl exec -n default "${POD1}" -- sh -c "printf '%s' \"${CONTENT1}\" > ${FILE1}"
+kubectl exec -n default "${POD2}" -- sh -c "printf '%s' \"${CONTENT2}\" > ${FILE2}"
+echo "Pod1 wrote to subPath user-1/conv-1, Pod2 to user-1/conv-2."
+
+# csg-hub-server 挂载根目录，应能在 /shared/user-1/conv-1 与 /shared/user-1/conv-2 下看到上述文件
+READ_BY_HUB1=$(kubectl exec -n default "${POD_HUB}" -- cat "/shared/user-1/conv-1/${FILE1##*/}" 2>/dev/null || true)
+READ_BY_HUB1_TRIMMED="${READ_BY_HUB1%$'\n'}"
+if [ "${READ_BY_HUB1_TRIMMED}" = "${CONTENT1}" ]; then
+  echo "csg-hub-server (${POD_HUB}) read Pod1's file at /shared/user-1/conv-1/ OK."
 else
-  echo "Pod1 verification FAILED: expected '${CONTENT1}', got '${READ1_TRIMMED}'"
+  echo "Verification FAILED: csg-hub-server expected '${CONTENT1}', got '${READ_BY_HUB1_TRIMMED}'"
   exit 1
 fi
 
-kubectl exec -n default "${POD2}" -- sh -c "printf '%s' \"${CONTENT2}\" > ${TEST_FILE}"
-READ2=$(kubectl exec -n default "${POD2}" -- cat "${TEST_FILE}")
-READ2_TRIMMED="${READ2%$'\n'}"
-if [ "${READ2_TRIMMED}" = "${CONTENT2}" ]; then
-  echo "Pod2 (${POD2}) subdir user-1/conv-2 OK: write and read back."
+READ_BY_HUB2=$(kubectl exec -n default "${POD_HUB}" -- cat "/shared/user-1/conv-2/${FILE2##*/}" 2>/dev/null || true)
+READ_BY_HUB2_TRIMMED="${READ_BY_HUB2%$'\n'}"
+if [ "${READ_BY_HUB2_TRIMMED}" = "${CONTENT2}" ]; then
+  echo "csg-hub-server (${POD_HUB}) read Pod2's file at /shared/user-1/conv-2/ OK."
 else
-  echo "Pod2 verification FAILED: expected '${CONTENT2}', got '${READ2_TRIMMED}'"
+  echo "Verification FAILED: csg-hub-server expected '${CONTENT2}', got '${READ_BY_HUB2_TRIMMED}'"
   exit 1
 fi
 
-kubectl exec -n default "${POD1}" -- rm -f "${TEST_FILE}"
-kubectl exec -n default "${POD2}" -- rm -f "${TEST_FILE}"
-echo "JuiceFS verification OK: user-1 has two conv dirs (user-1/conv-1, user-1/conv-2), each pod uses its own."
+kubectl exec -n default "${POD1}" -- rm -f "${FILE1}"
+kubectl exec -n default "${POD2}" -- rm -f "${FILE2}"
+echo "JuiceFS verification OK: two pods use separate subPaths; csg-hub-server (root mount) sees both."
 
 # Cleanup function: delete Sandbox CRs first (pods go away), then PVC, then infra
 cleanup() {
   echo "Cleaning up JuiceFS shared sandboxes and infra..."
   kubectl delete --timeout=30s --ignore-not-found -f "${JUICEFS_DIR}/sandbox-shared-1.yaml"
   kubectl delete --timeout=30s --ignore-not-found -f "${JUICEFS_DIR}/sandbox-shared-2.yaml"
+  kubectl delete --timeout=30s --ignore-not-found -f "${JUICEFS_DIR}/sandbox-csg-hub-server.yaml"
   # Wait for pods to terminate so PVC can be released
   kubectl wait --for=delete pod -l sandbox=juicefs-demo -n default --timeout=60s 2>/dev/null || true
   kubectl delete --timeout=30s --ignore-not-found -f "${JUICEFS_DIR}/juicefs-pvc.yaml"
@@ -179,5 +203,5 @@ cleanup() {
 # 取消注释下一行则脚本结束时自动清理
 # trap cleanup EXIT
 
-echo "Done. Two pods (${POD1}, ${POD2}) use JuiceFS PVC; subdirs user-1/conv-1 and user-1/conv-2 (user-id=user-1)."
+echo "Done. Three pods: ${POD1}, ${POD2} (subPath), ${POD_HUB} (csg-hub-server, root). One PVC, shared JuiceFS."
 echo "To cleanup later: uncomment 'trap cleanup EXIT' in this script and re-run, or run cleanup steps manually."

@@ -54,7 +54,7 @@
 
 ## 路径与标签
 
-- **PV 子目录（pathPattern）**：动态生成的 PV 在 JuiceFS 文件系统内对应子目录名为 `juicefs-<namespace>-<pvc-name>`，与 MinIO bucket 名 `juicefs` 一致，IO 与挂载路径清晰可辨。
+- **PV 子目录（pathPattern）**：动态生成的 PV 在 JuiceFS 内对应子目录名由 StorageClass 的 pathPattern 决定，期望为 `juicefs-<namespace>-<pvc-name>`（如 `juicefs-default-juicefs-demo-pvc`）。pathPattern **仅在新创建 PV 时生效**；若未生效（如 CSI 版本或创建顺序原因），则使用默认名 `pvc-<PVC_UID>`。集群外挂载时根目录下看到的即是该 PV 子目录（可能是上述二者之一）。
 - **Pod 标签**：`user-id: user-1`、`conv-id: conv-1`/`conv-2`、`juicefs/bucket`、`juicefs/pv-path`。卷内子目录为两级 user-id/conv-id，即 `user-1/conv-1`、`user-1/conv-2`。
 
 ## 多租户命名

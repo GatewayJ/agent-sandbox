@@ -1,5 +1,13 @@
 # StorageClass for JuiceFS (ReadWriteMany)
-# pathPattern: JuiceFS 内 PV 子目录名 = bucket名-命名空间-PVC名，便于区分 IO/挂载路径
+# pathPattern: JuiceFS 内 PV 子目录名，在「创建 PV」时计算，仅首次创建 PV 时生效。
+# 注意：pathPattern 仅在启用 JuiceFS 内置 provisioner 时生效；使用默认 csi-provisioner sidecar 时
+# CreateVolume 不会解析 pathPattern，目录名会是默认的 pvc-<PVC_UID>。本脚本会在部署 CSI 后自动
+# 启用内置 provisioner 并移除 csi-provisioner sidecar。
+#
+# 可用的模板变量（不能填 Pod 名：创建 PV 时还没有 Pod 挂载）：
+#   PVC:  ${.pvc.namespace}  ${.pvc.name}  ${.pvc.labels.<key>}  ${.pvc.annotations.<key>}
+#   Node: ${.node.name}  ${.node.labels.<key>}  ${.node.annotations.<key>}  (v0.23.3+)
+# 两种 provision 路径对比见: docs/provisioner-modes.md（相对本目录）
 # Ref: https://juicefs.com/docs/zh/csi/guide/configurations/#using-path-pattern
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -13,5 +21,5 @@ parameters:
   csi.storage.k8s.io/node-publish-secret-namespace: kube-system
   csi.storage.k8s.io/provisioner-secret-name: juicefs-sc-secret
   csi.storage.k8s.io/provisioner-secret-namespace: kube-system
-  # 动态 PV 子目录命名：juicefs-<namespace>-<pvc-name>；本示例为 juicefs-default-juicefs-demo-pvc
+  # 示例：固定前缀 + 命名空间 + PVC 名；也可改为含 ${.pvc.labels.xxx} 等
   pathPattern: "juicefs-${.pvc.namespace}-${.pvc.name}"
