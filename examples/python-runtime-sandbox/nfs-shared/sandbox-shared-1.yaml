@@ -1,0 +1,27 @@
+apiVersion: agents.x-k8s.io/v1alpha1
+kind: Sandbox
+metadata:
+  name: nfs-demo-sandbox-user-1-conv-1
+  namespace: default
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        sandbox: nfs-demo
+        user-id: "user-1"
+        conv-id: "conv-1"
+    spec:
+      containers:
+        - name: python-sandbox
+          image: sandbox-runtime:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8888
+          volumeMounts:
+            - name: shared-data
+              mountPath: /shared
+              subPath: user-1/conv-1
+      volumes:
+        - name: shared-data
+          persistentVolumeClaim:
+            claimName: nfs-demo-pvc

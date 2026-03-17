@@ -1,0 +1,19 @@
+# 静态 PV：挂载整个 NFS 根目录（与 provisioner 相同的 server/path），可访问所有动态 PVC 子目录
+# __NFS_SERVER__ 与 __NFS_PATH__ 由 run-test-kind-nfs.sh 替换为与 provisioner 相同的值
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-root-pv
+  labels:
+    nfs-root: "true"
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: __NFS_SERVER__
+    path: __NFS_PATH__

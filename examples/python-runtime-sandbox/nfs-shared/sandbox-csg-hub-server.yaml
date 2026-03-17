@@ -1,18 +1,16 @@
-# csg-hub-server：挂载 JuiceFS 卷根（父级），使用静态 PV juicefs-root-pv，可访问所有 PVC 子目录
-# 部署前需先 apply juicefs-root-pv.yaml 与 juicefs-root-pvc.yaml
+# csg-hub-server：挂载整个 NFS 根（静态 PV nfs-root-pv），可访问所有 PVC 子目录
+# 部署前需先 apply nfs-root-pv.yaml、nfs-root-pvc.yaml（由 run-test-kind-nfs.sh 用 NFS_SERVER/NFS_PATH 替换后 apply）
 apiVersion: agents.x-k8s.io/v1alpha1
 kind: Sandbox
 metadata:
-  name: juicefs-demo-sandbox-csg-hub-server
+  name: nfs-demo-sandbox-csg-hub-server
   namespace: default
 spec:
   podTemplate:
     metadata:
       labels:
-        sandbox: juicefs-demo
+        sandbox: nfs-demo
         app: csg-hub-server
-        juicefs/bucket: "juicefs"
-        juicefs/pv-path: "juicefs-root"
     spec:
       containers:
         - name: python-sandbox
@@ -23,8 +21,8 @@ spec:
           volumeMounts:
             - name: shared-data
               mountPath: /shared
-              # 静态 PV 挂载整个 JuiceFS 卷根，/shared 下可见如 juicefs-default-juicefs-demo-pvc 等子目录
+              # 挂载整个 NAS 根，/shared 下可见各 PVC 子目录（如 default-nfs-demo-pvc-<uid>/user-1/conv-1 等）
       volumes:
         - name: shared-data
           persistentVolumeClaim:
-            claimName: juicefs-root-pvc
+            claimName: nfs-root-pvc

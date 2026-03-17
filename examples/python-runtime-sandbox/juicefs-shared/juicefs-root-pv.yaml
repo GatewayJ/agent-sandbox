@@ -1,0 +1,24 @@
+# 静态 PV：挂载 JuiceFS 卷根目录（父级），可访问所有动态 PVC 子目录（如 juicefs-default-juicefs-demo-pvc 等）
+# Ref: https://juicefs.com/docs/csi/guide/pv/#static-provisioning
+# volumeHandle 须集群内唯一；不指定 subPath 时挂载整个文件系统根目录
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: juicefs-root-pv
+  labels:
+    juicefs-name: jfs-shared-root
+spec:
+  capacity:
+    storage: 10Pi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  csi:
+    driver: csi.juicefs.com
+    volumeHandle: juicefs-root-pv
+    fsType: juicefs
+    nodePublishSecretRef:
+      name: juicefs-sc-secret
+      namespace: kube-system
