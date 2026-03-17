@@ -12,6 +12,11 @@ spec:
         sandbox: nfs-demo
         app: csg-hub-server
     spec:
+      # 与 shared-1/2 统一 UID/GID，保证挂载的 NFS 路径多 Pod 可互相读写（见 docs/plans/2026-03-17-nas-mount-permissions.md）
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
+        fsGroup: 3000
       containers:
         - name: python-sandbox
           image: sandbox-runtime:latest

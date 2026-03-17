@@ -11,6 +11,10 @@ spec:
         user-id: "user-1"
         conv-id: "conv-1"
     spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
+        fsGroup: 3000
       containers:
         - name: python-sandbox
           image: sandbox-runtime:latest
