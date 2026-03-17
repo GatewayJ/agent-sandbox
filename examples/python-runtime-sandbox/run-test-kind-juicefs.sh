@@ -41,20 +41,24 @@ kubectl apply -f "${JUICEFS_DIR}/minio.yaml"
 kubectl apply -f "${JUICEFS_DIR}/redis.yaml"
 
 echo "Waiting for MinIO and Redis to be ready (MinIO sidecar creates bucket dynamically)..."
-kubectl wait --for=condition=available deployment/minio -n juicefs-infra --timeout=120s
+# 首次运行 Kind 可能需拉取镜像，适当延长超时
+kubectl wait --for=condition=available deployment/minio -n juicefs-infra --timeout=300s
 kubectl wait --for=condition=available deployment/redis -n juicefs-infra --timeout=120s
 # 给 sidecar 一点时间完成 bucket 创建（MinIO ready 后 sidecar 才连得上）
-sleep 5
+sleep 10
+
+echo "=== Deploying JuiceFS Secret (before CSI driver so controller can reference it) ==="
+kubectl apply -f "${JUICEFS_DIR}/juicefs-secret.yaml"
 
 echo "=== Deploying JuiceFS CSI Driver ==="
 kubectl apply -f "${CSI_DRIVER_URL}"
 
 echo "Waiting for JuiceFS CSI controller and node to be ready..."
-kubectl wait --for=condition=ready pod -l app=juicefs-csi-controller -n kube-system --timeout=120s
-kubectl wait --for=condition=ready pod -l app=juicefs-csi-node -n kube-system --timeout=120s
+# 首次运行 Kind 可能需拉取镜像，适当延长超时
+kubectl wait --for=condition=ready pod -l app=juicefs-csi-controller -n kube-system --timeout=300s
+kubectl wait --for=condition=ready pod -l app=juicefs-csi-node -n kube-system --timeout=300s
 
-echo "=== Deploying JuiceFS Secret, StorageClass, PVC ==="
-kubectl apply -f "${JUICEFS_DIR}/juicefs-secret.yaml"
+echo "=== Deploying JuiceFS StorageClass and PVC ==="
 kubectl apply -f "${JUICEFS_DIR}/juicefs-storageclass.yaml"
 kubectl apply -f "${JUICEFS_DIR}/juicefs-pvc.yaml"
 

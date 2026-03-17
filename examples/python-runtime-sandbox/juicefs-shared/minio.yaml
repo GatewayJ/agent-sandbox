@@ -50,6 +50,12 @@ spec:
           ports:
             - containerPort: 9000
             - containerPort: 9001
+          readinessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 5
+            periodSeconds: 5
           volumeMounts:
             - name: data
               mountPath: /data
@@ -67,6 +73,7 @@ spec:
               until mc alias set myminio http://127.0.0.1:9000 minioadmin minioadmin 2>/dev/null; do echo "waiting for MinIO..."; sleep 2; done
               mc mb myminio/juicefs --ignore-existing
               echo "Bucket juicefs ready"
+              exec sleep infinity
           resources:
             requests:
               memory: "64Mi"
