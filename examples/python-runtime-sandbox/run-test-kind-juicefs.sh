@@ -111,6 +111,11 @@ kubectl apply -f "${JUICEFS_DIR}/juicefs-pvc.yaml"
 echo "Waiting for PVC to be bound..."
 kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/juicefs-demo-pvc -n default --timeout=120s
 
+echo "=== Deploying JuiceFS root PV/PVC (csg-hub-server 挂载整个卷根) ==="
+kubectl apply -f "${JUICEFS_DIR}/juicefs-root-pv.yaml"
+kubectl apply -f "${JUICEFS_DIR}/juicefs-root-pvc.yaml"
+kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/juicefs-root-pvc -n default --timeout=60s
+
 echo "Waiting for agent-sandbox-controller to be ready..."
 kubectl wait --for=condition=available deployment/agent-sandbox-controller -n agent-sandbox-system --timeout=120s
 
@@ -187,6 +192,8 @@ cleanup() {
   # Wait for pods to terminate so PVC can be released
   kubectl wait --for=delete pod -l sandbox=juicefs-demo -n default --timeout=60s 2>/dev/null || true
   kubectl delete --timeout=30s --ignore-not-found -f "${JUICEFS_DIR}/juicefs-pvc.yaml"
+  kubectl delete --timeout=10s --ignore-not-found -f "${JUICEFS_DIR}/juicefs-root-pvc.yaml"
+  kubectl delete --timeout=10s --ignore-not-found -f "${JUICEFS_DIR}/juicefs-root-pv.yaml"
   kubectl delete --timeout=10s --ignore-not-found -f "${JUICEFS_DIR}/juicefs-storageclass.yaml"
   kubectl delete --timeout=10s --ignore-not-found -f "${JUICEFS_DIR}/juicefs-secret.yaml"
   kubectl delete --timeout=10s --ignore-not-found -f "${JUICEFS_DIR}/minio.yaml"

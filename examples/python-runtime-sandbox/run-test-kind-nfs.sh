@@ -18,6 +18,7 @@
 # 不触碰第一个集群 agent-sandbox。NFS 可集群外（设置 NFS_SERVER、NFS_PATH）或由脚本在集群内自动部署。
 #
 # 用法：
+#NFS_SERVER=192.168.3.54 NFS_PATH=/srv/nfs/exports ./run-test-kind-nfs.sh
 #   外部 NFS:  NFS_SERVER=your-nfs-host NFS_PATH=/exported/path ./run-test-kind-nfs.sh
 #   本地 NFS:  不设置 NFS_SERVER/NFS_PATH，脚本会在集群内部署 NFS 服务并验证。
 

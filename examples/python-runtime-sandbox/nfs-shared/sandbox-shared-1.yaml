@@ -25,6 +25,9 @@ spec:
             - name: shared-data
               mountPath: /shared
               subPath: user-1/conv-1
+            - name: shared-data-2
+              mountPath: /shared-2
+              subPath: office-1/conv-1
       volumes:
         - name: shared-data
           persistentVolumeClaim:
