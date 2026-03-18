@@ -20,7 +20,7 @@ spec:
         fsGroup: 3000
       containers:
         - name: python-sandbox
-          image: sandbox-runtime:latest
+          image: ghcr.io/openclaw/openclaw:main-slim
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8888

@@ -150,6 +150,15 @@ if [ -z "${POD1}" ] || [ -z "${POD2}" ] || [ -z "${POD_HUB}" ]; then
   echo "ERROR: could not get pod names (POD1=${POD1:-<empty>}, POD2=${POD2:-<empty>}, POD_HUB=${POD_HUB:-<empty>})"
   exit 1
 fi
+
+# csg-hub-server 挂载 JuiceFS 卷根，/shared 下为动态 PVC 子目录（如 juicefs-default-juicefs-demo-pvc），再其下才是 user-1/conv-1 等
+JUICEFS_PVC_SUBDIR=$(kubectl exec -n default "${POD_HUB}" -- ls /shared 2>/dev/null | head -1)
+if [ -z "${JUICEFS_PVC_SUBDIR}" ]; then
+  echo "ERROR: csg-hub-server /shared is empty or not readable"
+  exit 1
+fi
+echo "JuiceFS root subdir for demo PVC: ${JUICEFS_PVC_SUBDIR}"
+
 # Pod1/Pod2 各挂载不同 subPath（user-1/conv-1、user-1/conv-2），不能互相读对方目录；由挂载根目录的 csg-hub-server 验证可见性
 FILE1="/shared/pod1-wrote-$$.txt"
 FILE2="/shared/pod2-wrote-$$.txt"
@@ -160,20 +169,22 @@ kubectl exec -n default "${POD1}" -- sh -c "printf '%s' \"${CONTENT1}\" > ${FILE
 kubectl exec -n default "${POD2}" -- sh -c "printf '%s' \"${CONTENT2}\" > ${FILE2}"
 echo "Pod1 wrote to subPath user-1/conv-1, Pod2 to user-1/conv-2."
 
-# csg-hub-server 挂载根目录，应能在 /shared/user-1/conv-1 与 /shared/user-1/conv-2 下看到上述文件
-READ_BY_HUB1=$(kubectl exec -n default "${POD_HUB}" -- cat "/shared/user-1/conv-1/${FILE1##*/}" 2>/dev/null || true)
+# hub 下真实路径为 /shared/<pvc-subdir>/user-1/conv-1 与 /shared/<pvc-subdir>/user-1/conv-2
+HUB_PATH1="/shared/${JUICEFS_PVC_SUBDIR}/user-1/conv-1/${FILE1##*/}"
+HUB_PATH2="/shared/${JUICEFS_PVC_SUBDIR}/user-1/conv-2/${FILE2##*/}"
+READ_BY_HUB1=$(kubectl exec -n default "${POD_HUB}" -- cat "${HUB_PATH1}" 2>/dev/null || true)
 READ_BY_HUB1_TRIMMED="${READ_BY_HUB1%$'\n'}"
 if [ "${READ_BY_HUB1_TRIMMED}" = "${CONTENT1}" ]; then
-  echo "csg-hub-server (${POD_HUB}) read Pod1's file at /shared/user-1/conv-1/ OK."
+  echo "csg-hub-server (${POD_HUB}) read Pod1's file at ${HUB_PATH1} OK."
 else
   echo "Verification FAILED: csg-hub-server expected '${CONTENT1}', got '${READ_BY_HUB1_TRIMMED}'"
   exit 1
 fi
 
-READ_BY_HUB2=$(kubectl exec -n default "${POD_HUB}" -- cat "/shared/user-1/conv-2/${FILE2##*/}" 2>/dev/null || true)
+READ_BY_HUB2=$(kubectl exec -n default "${POD_HUB}" -- cat "${HUB_PATH2}" 2>/dev/null || true)
 READ_BY_HUB2_TRIMMED="${READ_BY_HUB2%$'\n'}"
 if [ "${READ_BY_HUB2_TRIMMED}" = "${CONTENT2}" ]; then
-  echo "csg-hub-server (${POD_HUB}) read Pod2's file at /shared/user-1/conv-2/ OK."
+  echo "csg-hub-server (${POD_HUB}) read Pod2's file at ${HUB_PATH2} OK."
 else
   echo "Verification FAILED: csg-hub-server expected '${CONTENT2}', got '${READ_BY_HUB2_TRIMMED}'"
   exit 1
