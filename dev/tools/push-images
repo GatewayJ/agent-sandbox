@@ -33,7 +33,16 @@ def create_buildx_builder_if_not_exists():
     except subprocess.CalledProcessError:
         print(f"creating buildx builder '{builder_name}'.")
         subprocess.run(
-            ["docker", "buildx", "create", "--name", builder_name], check=True
+            [
+                "docker",
+                "buildx",
+                "create",
+                "--name",
+                builder_name,
+                "--driver-opt",
+                "network=host",
+            ],
+            check=True,
         )
     subprocess.run(["docker", "buildx", "use", builder_name], check=True)
 

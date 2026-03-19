@@ -73,10 +73,12 @@ make build
 make deploy-kind
 cd "${SCRIPT_DIR}"
 
-echo "Building sandbox-runtime image..."
-docker build -t sandbox-runtime .
+# 当前 Dockerfile 为 openclaw+python-sandbox，需 --network=host 避免构建时 apt/DNS 超时
+echo "Building openclaw-python-sandbox image (tagged also as sandbox-runtime for shared-2/csg-hub-server)..."
+docker build --network=host -t openclaw-python-sandbox:latest -t sandbox-runtime:latest .
 
-echo "Loading sandbox-runtime image into kind cluster..."
+echo "Loading images into kind cluster..."
+kind load docker-image openclaw-python-sandbox:latest --name "${KIND_CLUSTER_NAME}"
 kind load docker-image sandbox-runtime:latest --name "${KIND_CLUSTER_NAME}"
 
 echo "=== Deploying JuiceFS infra (namespace, MinIO, Redis) ==="

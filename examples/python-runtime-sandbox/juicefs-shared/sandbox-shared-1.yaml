@@ -20,14 +20,22 @@ spec:
         fsGroup: 3000
       containers:
         - name: python-sandbox
-          image: ghcr.io/openclaw/openclaw:main-slim
+          image: sandbox-runtime:latest
           imagePullPolicy: IfNotPresent
+          env:
+            - name: CSGHUB_USER_TOKEN
+              value: ""
+            - name: AIGATEWAY_BASE_URL
+              value: ""
+            - name: OPENCLAW_FORCE_DEFAULT_CONFIG
+              value: "1"
           ports:
             - containerPort: 8888
+            - containerPort: 18789
           volumeMounts:
             - name: shared-data
-              mountPath: /shared
-              subPath: user-1/conv-1
+              mountPath: /home/node/.openclaw
+              subPath: user-1/conv-1/.openclaw
       volumes:
         - name: shared-data
           persistentVolumeClaim:

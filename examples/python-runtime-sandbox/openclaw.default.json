@@ -1,0 +1,97 @@
+{
+  "wizard": {
+    "lastRunAt": "2026-03-17T00:00:00.000Z",
+    "lastRunVersion": "2026.3.3",
+    "lastRunCommand": "onboard",
+    "lastRunMode": "local"
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "aigateway-opencsg": {
+        "baseUrl": "https://aigateway.opencsg-stg.com/v1",
+        "apiKey": "${CSGHUB_ACCESS_TOKEN}",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "minimax-m2.5",
+            "name": "minimax-m2.5 (Custom Provider)",
+            "reasoning": true,
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 256000,
+            "maxTokens": 128000
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "aigateway-opencsg/minimax-m2.5"
+      },
+      "workspace": "~/.openclaw/workspace",
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      }
+    }
+  },
+  "tools": {
+    "profile": "full"
+  },
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "lan",
+    "auth": {
+      "mode": "token",
+      "token": "dev-token-no-restriction-12345678901234567890"
+    },
+    "controlUi": {
+      "enabled": true,
+      "basePath": "/",
+      "dangerouslyDisableDeviceAuth": true,
+      "allowedOrigins": [
+        "http://127.0.0.1:18789",
+        "http://localhost:18789",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "*"
+      ],
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    },
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "nodes": {
+      "denyCommands": []
+    }
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.3.3",
+    "lastTouchedAt": "2026-03-17T00:00:00.000Z"
+  }
+}
